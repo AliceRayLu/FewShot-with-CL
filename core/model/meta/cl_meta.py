@@ -1,31 +1,32 @@
-import nn
-from einops.layers import torch
+import torch
+from torch import nn
 
 from core.model import convert_maml_module, MetaModel
-from core.model.meta.boil import BOILLayer
 from core.utils import accuracy
 
 
-class FXXKLayer(nn.Module):
+class MLP(nn.Module):  # MLP with one hidden layer
 
-    # N-way 类别数量 K-shot 类别中样本数量
-    def __init__(self, feat_dim=64, way_num=5):
-        super(BOILLayer, self).__init__()
-        self.layers = nn.Sequential(nn.Linear(feat_dim, way_num))
+    def __init__(self, feat_dim, output_dim):
+        super(MLP,self).__init__()
+        self.hidden = nn.Linear(feat_dim,output_dim)
+        self.act_func = nn.ReLU()
 
     def forward(self, x):
-        return self.layers(x)
+        x = self.hidden(x)
+        x = self.act_func(x)
+        return x
 
 
 
-class FXXK(MetaModel):
+class CL_META(MetaModel):
     # TODO : loss_func  emb_func(include GAP)
     def __init__(self, feat_dim, loss_func, inner_param, **kwargs):
-        super(FXXK, self).__init__(**kwargs)
+        super(CL_META, self).__init__(**kwargs)
         self.feat_dim = feat_dim
         self.inner_param = inner_param
         self.loss_func = loss_func
-        self.classifier = FXXKLayer(feat_dim, way_num=self.way_num)
+        # self.classifier = FXXKLayer(feat_dim, way_num=self.way_num)
         self.inner_param = inner_param
 
         convert_maml_module(self)

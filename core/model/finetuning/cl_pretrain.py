@@ -158,7 +158,7 @@ class S2M2(FinetuningModel):
 
         return global_output, accuracy, total_loss
 
-    def global_contrastive_loss(x, temperature):
+    def global_contrastive_loss(self, x, temperature):
         # x: (2N, D)
         N, D = x.shape
         # 对投影向量进行标准化
@@ -172,21 +172,21 @@ class S2M2(FinetuningModel):
 
         return loss
 
-    def map_map_loss(xa, xb, temperature):
+    def map_map_loss(self, xa, xb, temperature):
         # xa, xb: (B, HW, D)
         sim_matrix = torch.matmul(xa, xb.permute(0, 2, 1)) / temperature
         mask = torch.eye(xa.size(1)).bool()
         loss = -torch.sum(F.log_softmax(sim_matrix, dim=1)[mask]) / xa.size(0)
         return loss
 
-    def vec_map_loss(ui, za, tau):
+    def vec_map_loss(self, ui, za, tau):
         # ui: (B, D, HW), za: (B, D)
         sim_matrix = torch.matmul(ui.permute(0, 2, 1), za.unsqueeze(-1)).squeeze() / tau
         mask = torch.eye(ui.size(2)).bool()
         loss = -torch.sum(F.log_softmax(sim_matrix, dim=1)[mask]) / ui.size(0)
         return loss
 
-    def supervised_contrastive_loss(x, target, temperature):
+    def supervised_contrastive_loss(self, x, target, temperature):
         # x: (2N, D), target: (2N,)
         N, D = x.shape
         x = F.normalize(x, dim=1)

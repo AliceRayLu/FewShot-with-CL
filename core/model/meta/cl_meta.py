@@ -56,35 +56,37 @@ class CL_META(MetaModel):
         acc = accuracy(output, query_target.contiguous().view(-1))
         return output, acc
 
-    def set_forward_loss(self, batch):
-        image, global_target = batch
-        image = image.to(self.device)
-        (
-            support_image,
-            query_image,
-            support_target,
-            query_target,
-        ) = self.split_by_episode(image, mode=2)
-        episode_size, _, c, h, w = support_image.size()
-
+    def my_forward(self, X):
+        # 传入 support_image、query_image...
+        episode_size, _, c, h, w = X.size()
         output_list = []
         for i in range(episode_size):
-            episode_support_image = support_image[i].contiguous().reshape(-1, c, h, w)
-            episode_query_image = query_image[i].contiguous().reshape(-1, c, h, w)
-            episode_support_target = support_target[i].reshape(-1)
-            self.set_forward_adaptation(episode_support_image, episode_support_target)
-
-            features, output = self.forward_output(episode_query_image)
-
+            episode_image = X[i].contiguous().reshape(-1, c, h, w)
+            _, output = self.forward_output(episode_image)
             output_list.append(output)
 
         output = torch.cat(output_list, dim=0)
-        loss = self.loss_func(output, query_target.contiguous().view(-1)) / episode_size
-        acc = accuracy(output, query_target.contiguous().view(-1))
-        return output, acc, loss
+        return output
 
-    def set_forward_adaptation(self, support_set, support_target):
-        # 分类头和特征提取器采取不同的learning rate
+    def set_forward_loss(self, batch):
+        image1, _ = batch[0]
+        image1 = image1.to(self.device)
+        (
+            support_X1,
+            query_X1,
+            support_y1,
+            query_y1,
+        ) = self.split_by_episode(image1, mode=2)
+
+        image2, _ = batch[1]
+        image2 = image2.to(self.device)
+        (
+            support_X2,
+            query_X2,
+            support_y2,
+            query_y2,
+        ) = self.split_by_episode(image2, mode=2)
+
         extractor_lr = self.inner_param["extractor_lr"]
         classifier_lr = self.inner_param["classifier_lr"]
         fast_parameters = list(item[1] for item in self.named_parameters())
@@ -92,8 +94,19 @@ class CL_META(MetaModel):
             parameter.fast = None
         self.emb_func.train()
         self.classifier.train()
-        features, output = self.forward_output(support_set)
-        loss = self.loss_func(output, support_target)
+
+        support_X1 = self.my_forward(support_X1)
+        support_X2 = self.my_forward(support_X2)
+        query_X1 = self.my_forward(query_X1)
+        query_X2 = self.my_forward(query_X2)
+
+        # TODO : tau & beta
+        L_meta = self.L_meta(support_X1, query_X1, support_y1, query_y1,
+                    support_X2, query_X2, support_y2, query_y2)
+        L_info = self.L_info(support_X1, query_X1, support_y1, query_y1,
+                    support_X2, query_X2, support_y2, query_y2, tau)
+
+        loss = L_meta + beta * L_info
         grad = torch.autograd.grad(
             loss, fast_parameters, create_graph=True, allow_unused=True
         )

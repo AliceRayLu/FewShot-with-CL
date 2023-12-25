@@ -69,7 +69,8 @@ class CL_META(MetaModel):
         return output
 
     def set_forward_loss(self, batch):
-        image1, _ = batch[0]
+        images, _ = batch
+        image1 = images[0]
         image1 = image1.to(self.device)
         (
             support_X1,
@@ -78,7 +79,7 @@ class CL_META(MetaModel):
             query_y1,
         ) = self.split_by_episode(image1, mode=2)
 
-        image2, _ = batch[1]
+        image2 = images[1]
         image2 = image2.to(self.device)
         (
             support_X2,

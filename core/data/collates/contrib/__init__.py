@@ -2,7 +2,7 @@
 from .autoaugment import ImageNetPolicy
 from .cutout import Cutout
 from .randaugment import RandAugment
-from .SimCLR_Style import ContrastiveLearningDataset, ContrastiveLearningViewGenerator
+from .SimCLR_Style import SimCLR_Style, ContrastiveLearningViewGenerator, Standard
 from torchvision import transforms
 
 CJ_DICT = {"brightness": 0.4, "contrast": 0.4, "saturation": 0.4}
@@ -45,7 +45,11 @@ def get_augment_method(
                 cifar10: 32
                 stl10: 96
             """
-            base_transform=ContrastiveLearningDataset().get_simclr_pipeline_transform(config["augment_method"]["size"])
+            base_transform = SimCLR_Style(config["augment_method"]["size"]).base_transform
+            trfms_list += [ContrastiveLearningViewGenerator(base_transform)]
+        elif config["augment_method"] == "Standard":
+            trfms_list = get_default_image_size_trfms(config["image_size"])
+            base_transform = Standard(config["augment_method"]["size"]).base_transform
             trfms_list += [ContrastiveLearningViewGenerator(base_transform)]
         elif config["augment_method"] == "AutoAugment":
             trfms_list = get_default_image_size_trfms(config["image_size"])

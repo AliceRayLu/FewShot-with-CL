@@ -67,6 +67,39 @@ class VectorMapModule(nn.Module):
         return ui, za
 
 
+class MLP(nn.Module):
+    def __init__(self, input_dim, hidden_dim, output_dim, use_bias=True, use_bn=False, num_layers=2):
+        super(MLP, self).__init__()
+
+        self.layers = nn.ModuleList()
+        self.num_layers = num_layers
+
+        for i in range(num_layers):
+            # Linear layer
+            self.layers.append(nn.Linear(input_dim, hidden_dim, bias=use_bias))
+
+            # Batch Normalization if specified
+            if use_bn:
+                self.layers.append(nn.BatchNorm1d(hidden_dim))
+
+            # ReLU activation (except for the last layer)
+            if i < num_layers - 1:
+                self.layers.append(nn.ReLU())
+
+            input_dim = hidden_dim
+
+        # Projection head
+        self.projection_head = nn.Linear(hidden_dim, output_dim, bias=use_bias)
+
+    def forward(self, x):
+        for layer in self.layers:
+            x = layer(x)
+
+        # Projection head
+        logits = self.projection_head(x)
+
+        return logits
+
 class S2M2(FinetuningModel):
     def __init__(self, feat_dim, num_class, inner_param, **kwargs):
         super(S2M2, self).__init__(**kwargs)
@@ -78,6 +111,10 @@ class S2M2(FinetuningModel):
         self.classifier_rot = nn.Linear(feat_dim, 4)
         self.disclass = distLinear(feat_dim, num_class)
         self.loss_func = nn.CrossEntropyLoss()
+
+        # 定义 MLP
+        mlp_hidden_dim = 128  # 请根据需要调整隐藏层维度
+        self.mlp = MLP(feat_dim, mlp_hidden_dim, feat_dim)
 
     def set_forward(self, batch):
         """
@@ -108,22 +145,22 @@ class S2M2(FinetuningModel):
         image = image.to(self.device)
         target = target.to(self.device)
 
-        # 假设已经有一个 CE 损失函数，这里用 L_CE 表示
-        L_CE = nn.CrossEntropyLoss()
-
-        # 定义温度参数
-        tau1 = 0.1
-        tau2 = 0.1
-        tau3 = 0.1
-        tau4 = 0.1
-
-        # 假设已经有一个特征提取函数和分类器，这里用 feat_extractor 和 classifier 表示
+        # 假设已经有一个特征提取函数和分类器，这里用 feat_extractor 和 classifier 表示 cnn
         feat_extractor = self.emb_func
         classifier = self.cls_classifier
 
         # 获取全局特征
         global_feat = feat_extractor(image)
         global_output = classifier(global_feat)
+
+        # 假设已经有一个 CE 损失函数，这里用 L_CE 表示
+        L_CE = self.loss_func(global_output, target)
+
+        # 定义温度参数
+        tau1 = 0.1
+        tau2 = 0.1
+        tau3 = 0.1
+        tau4 = 0.1
 
         # 计算全局自监督对比损失
         l_ss_global = self.global_contrastive_loss(global_feat, tau1)

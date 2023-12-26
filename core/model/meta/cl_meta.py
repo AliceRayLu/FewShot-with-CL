@@ -4,6 +4,8 @@ from torch import nn
 from core.model import convert_maml_module, MetaModel
 from core.utils import accuracy
 
+import math
+
 
 class MLP(nn.Module):  # MLP with one hidden layer
 
@@ -16,6 +18,16 @@ class MLP(nn.Module):  # MLP with one hidden layer
         x = self.hidden(x)
         x = self.act_func(x)
         return x
+    
+class Attn(nn.Module): # Multi-head attention with heads fixed to 1
+    
+    def __init__(self, embed_dim):
+        super(Attn, self).__init__()
+        self.attn = nn.MultiheadAttention(embed_dim, 1)
+
+    def forward(self, support_img , query_img, support_target):
+        output, weights = self.attn(query_img, support_target, support_img)
+        return output
 
 
 class CL_META(MetaModel):
@@ -28,6 +40,9 @@ class CL_META(MetaModel):
         # self.classifier = FXXKLayer(feat_dim, way_num=self.way_num)
         self.inner_param = inner_param
         self.projection = MLP(feat_dim, way_num)
+
+        self.attention = Attn()  # TODO: embed_dim
+
         convert_maml_module(self)
 
     def forward_output(self, x):
@@ -163,9 +178,9 @@ class CL_META(MetaModel):
         # 使用广播计算和各个类别的欧氏距离
         distances = pdist(X, c)
 
-        up = exp(-distances[:, y])
+        up = math.exp(-distances[:, y])
         # 对每个类别的距离取指数并相加
-        down = exp(-distances).sum()
+        down = math.exp(-distances).sum()
 
         p = up / down
         return p
@@ -190,9 +205,9 @@ class CL_META(MetaModel):
         c1 = self.crk(support_X1, support_y1)
         c2 = self.crk(support_X2, support_y2)
 
-        # TODO : attention
-        c1 = self.attention(c1)
-        c2 = self.attention(c2)
+        # TODO : attention how to forward
+        c1 = self.attention.forward()
+        c2 = self.attention.forward()
 
         Lmeta = self.L_mn(query_X1, query_y1, c1) + self.L_mn(query_X1, query_y1, c2) + \
                 self.L_mn(query_X2, query_y2, c1) + self.L_mn(query_X2, query_y2, c2)

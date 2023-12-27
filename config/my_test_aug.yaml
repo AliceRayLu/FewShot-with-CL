@@ -1,0 +1,58 @@
+includes:
+  - headers/data.yaml
+  - headers/device.yaml
+  - headers/misc.yaml
+  - headers/model.yaml
+  - headers/optimizer.yaml
+
+data_root: /data/miniImageNet--ravi
+image_size: 84
+use_memory: False
+augment: True
+augment_times: 1
+augment_times_query: 1
+augment_method: SimCLR_Style
+augment_size: 64
+
+backbone:
+    name: Conv64FLeakyReLU
+    kwargs:
+        is_flatten: False
+
+classifier:
+    name: DN4
+    kwargs:
+        n_k: 3
+
+epoch: 50
+test_epoch: 5
+
+pretrain_path: ~
+resume: False
+
+way_num: 5
+shot_num: 5
+query_num: 15
+test_way: ~
+test_shot: ~
+test_query: ~
+episode_size: 1
+# batch_size只在pre-train中起效
+batch_size: 128
+train_episode: 10000
+test_episode: 1000
+
+optimizer:
+    name: Adam
+    kwargs:
+        lr: 0.01
+    other:
+        emb_func: 0.01
+        #演示用，dn4分类时没有可训练参数
+        dn4_layer: 0.001
+
+lr_scheduler:
+  name: StepLR
+  kwargs:
+    gamma: 0.5
+    step_size: 10

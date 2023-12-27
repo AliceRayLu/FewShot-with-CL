@@ -67,9 +67,22 @@ class VectorMapModule(nn.Module):
         return ui, za
 
 
-class S2M2(FinetuningModel):
+class MLP(nn.Module):  # MLP with one hidden layer
+
+    def __init__(self, feat_dim, output_dim):
+        super(MLP, self).__init__()
+        self.hidden = nn.Linear(feat_dim, output_dim)
+        self.act_func = nn.ReLU()
+
+    def forward(self, x):
+        x = self.hidden(x)
+        x = self.act_func(x)
+        return x
+
+
+class CL_PRETRAIN(FinetuningModel):
     def __init__(self, feat_dim, num_class, inner_param, **kwargs):
-        super(S2M2, self).__init__(**kwargs)
+        super(CL_PRETRAIN, self).__init__(**kwargs)
         self.feat_dim = feat_dim
         self.num_class = num_class
         self.inner_param = inner_param
@@ -79,51 +92,78 @@ class S2M2(FinetuningModel):
         self.disclass = distLinear(feat_dim, num_class)
         self.loss_func = nn.CrossEntropyLoss()
 
+        # 定义 MLP
+        mlp_hidden_dim = 128  # 请根据需要调整隐藏层维度
+        self.mlp = MLP(feat_dim, mlp_hidden_dim, feat_dim)
+
     def set_forward(self, batch):
-        """
-        :param batch:
-        :return:
-        """
         image, global_target = batch
         image = image.to(self.device)
-        with torch.no_grad():
-            feat = self.emb_func(image)
-
-        support_feat, query_feat, support_target, query_target = self.split_by_episode(feat, mode=1)
-        episode_size = support_feat.size(0)
+        (
+            support_image,
+            query_image,
+            support_target,
+            query_target,
+        ) = self.split_by_episode(image, mode=2)
+        episode_size, _, c, h, w = support_image.size()
 
         output_list = []
         for i in range(episode_size):
-            output = self.set_forward_adaptation(support_feat[i], support_target[i], query_feat[i])
+            episode_query_image = query_image[i].contiguous().reshape(-1, c, h, w)
+            _, output = self.forward_output(episode_query_image)
             output_list.append(output)
 
         output = torch.cat(output_list, dim=0)
-
-        acc = accuracy(output, query_target.reshape(-1))
-        # acc=((output.to(self.device)==query_target).sum().item()/output.size(0))
+        acc = accuracy(output, query_target.contiguous().view(-1))
         return output, acc
 
+
+    def my_forward(self, X):
+        episode_size, _, c, h, w = X.size()
+        output_list = []
+        for i in range(episode_size):
+            episode_image = X[i].contiguous().reshape(-1, c, h, w)
+            _, output = self.forward_output(episode_image)
+            output_list.append(output)
+
+        output = torch.cat(output_list, dim=0)
+        return output
+
     def set_forward_loss(self, batch):
-        image, target = batch
-        image = image.to(self.device)
+        _, target = batch
         target = target.to(self.device)
 
-        # 假设已经有一个 CE 损失函数，这里用 L_CE 表示
-        L_CE = nn.CrossEntropyLoss()
+        images, _ = batch
+        image1 = images[0]
+        image1 = image1.to(self.device)
+        (
+            X1
+        ) = self.split_by_episode(image1, mode=2)
+
+        image2 = images[1]
+        image2 = image2.to(self.device)
+        (
+            X2
+        ) = self.split_by_episode(image2, mode=2)
+
+        X1 = self.my_forward(X1)
+        X2 = self.my_forward(X2)
+
+        # 假设已经有一个特征提取函数和分类器，这里用 feat_extractor 和 classifier 表示 cnn
+        feat_extractor = self.emb_func
+        classifier = self.cls_classifier
+
+        # 获取全局特征
+        global_feat = feat_extractor(X1)
+        global_output = classifier(global_feat)
+
+        L_CE = self.loss_func(global_output, target)
 
         # 定义温度参数
         tau1 = 0.1
         tau2 = 0.1
         tau3 = 0.1
         tau4 = 0.1
-
-        # 假设已经有一个特征提取函数和分类器，这里用 feat_extractor 和 classifier 表示
-        feat_extractor = self.emb_func
-        classifier = self.cls_classifier
-
-        # 获取全局特征
-        global_feat = feat_extractor(image)
-        global_output = classifier(global_feat)
 
         # 计算全局自监督对比损失
         l_ss_global = self.global_contrastive_loss(global_feat, tau1)
@@ -159,6 +199,8 @@ class S2M2(FinetuningModel):
         return global_output, accuracy, total_loss
 
     def global_contrastive_loss(self, x, temperature):
+        x = self.projection.forward(x)
+
         # x: (2N, D)
         N, D = x.shape
         # 对投影向量进行标准化
@@ -187,6 +229,8 @@ class S2M2(FinetuningModel):
         return loss
 
     def supervised_contrastive_loss(self, x, target, temperature):
+        x = self.projection.forward(x)
+
         # x: (2N, D), target: (2N,)
         N, D = x.shape
         x = F.normalize(x, dim=1)

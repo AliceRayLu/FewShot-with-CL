@@ -15,7 +15,7 @@ def main(rank, config):
 
 
 if __name__ == "__main__":
-    config = Config("./config/test_install.yaml").get_config_dict()
+    config = Config("./config/my_test_aug.yaml").get_config_dict()
 
     if config["n_gpu"] > 1:
         os.environ["CUDA_VISIBLE_DEVICES"] = config["device_ids"]

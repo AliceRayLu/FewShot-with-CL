@@ -116,11 +116,14 @@ class CL_META(MetaModel):
         query_X1 = self.my_forward(query_X1)
         query_X2 = self.my_forward(query_X2)
 
-        # TODO : tau & beta
+        tau5 = 0.1
+        beta = 0.01
+
+
         L_meta = self.L_meta(support_X1, query_X1, support_y1, query_y1,
                     support_X2, query_X2, support_y2, query_y2)
         L_info = self.L_info(support_X1, query_X1, support_y1, query_y1,
-                    support_X2, query_X2, support_y2, query_y2, tau)
+                    support_X2, query_X2, support_y2, query_y2, tau5)
 
         loss = L_meta + beta * L_info
         grad = torch.autograd.grad(

@@ -192,7 +192,7 @@ class CL_META(MetaModel):
         log_probs = 0.0
         for i in range(len(X)):
             # 调用P函数计算概率
-            p = P(X[i], y[i], c)
+            p = self.P(X[i], y[i], c)
             # 取对数并相加
             log_probs -= torch.log(p)
 
@@ -206,8 +206,8 @@ class CL_META(MetaModel):
         c2 = self.crk(support_X2, support_y2)
 
         # TODO : attention how to forward
-        c1 = self.attention.forward()
-        c2 = self.attention.forward()
+        c1 = self.attention.forward(c1,query_X1,support_y1)
+        c2 = self.attention.forward(c2,query_X2,support_y2)
 
         Lmeta = self.L_mn(query_X1, query_y1, c1) + self.L_mn(query_X1, query_y1, c2) + \
                 self.L_mn(query_X2, query_y2, c1) + self.L_mn(query_X2, query_y2, c2)

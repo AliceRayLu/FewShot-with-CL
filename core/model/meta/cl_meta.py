@@ -32,16 +32,14 @@ class Attn(nn.Module): # Multi-head attention with heads fixed to 1
 
 class CL_META(MetaModel):
     # TODO : loss_func  emb_func(include GAP)
-    def __init__(self, feat_dim, way_num, loss_func, inner_param, **kwargs):
+    def __init__(self, feat_dim, class_num, way_num, loss_func, inner_param, **kwargs):
         super(CL_META, self).__init__(**kwargs)
         self.feat_dim = feat_dim
         self.inner_param = inner_param
         self.loss_func = loss_func
-        # self.classifier = FXXKLayer(feat_dim, way_num=self.way_num)
-        self.inner_param = inner_param
-        self.projection = MLP(feat_dim, way_num)
-
-        self.attention = Attn()  # TODO: embed_dim
+        self.projection = MLP(feat_dim, class_num)
+        self.way_num = way_num
+        self.attention = Attn(feat_dim*class_num)  # TODO: embed_dim
 
         convert_maml_module(self)
 

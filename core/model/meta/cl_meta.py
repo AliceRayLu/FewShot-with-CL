@@ -40,6 +40,8 @@ class CL_META(MetaModel):
         self.projection = MLP(feat_dim, class_num)
         self.way_num = way_num
         self.attention = Attn(feat_dim*class_num)  # TODO: embed_dim
+        self.optimizer = SGD(params=[...], lr=0.01, momentum=0.9, weight_decay=5e-4)
+        self.scheduler = StepLR(optimizer, step_size=40, gamma=0.5)
 
         convert_maml_module(self)
 
@@ -101,8 +103,12 @@ class CL_META(MetaModel):
             query_y2,
         ) = self.split_by_episode(image2, mode=2)
 
-        extractor_lr = self.inner_param["extractor_lr"]
-        classifier_lr = self.inner_param["classifier_lr"]
+        # extractor_lr = self.inner_param["extractor_lr"]
+        # classifier_lr = self.inner_param["classifier_lr"]
+
+        extractor_lr = self.scheduler.get_last_lr()[0]
+        classifier_lr = self.scheduler.get_last_lr()[0]
+
         fast_parameters = list(item[1] for item in self.named_parameters())
         for parameter in self.parameters():
             parameter.fast = None

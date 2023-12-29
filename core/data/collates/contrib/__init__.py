@@ -101,6 +101,8 @@ def get_augment_method(
                 transforms.Resize((92, 92)),
                 transforms.CenterCrop((80, 80)),
             ]
+        elif config["image_size"] == 64:
+            trfms_list = []
         else:
             raise RuntimeError
 

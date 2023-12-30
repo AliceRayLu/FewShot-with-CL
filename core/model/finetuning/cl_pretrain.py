@@ -79,7 +79,6 @@ class MLP(nn.Module):  # MLP with one hidden layer
         x = self.act_func(x)
         return x
 
-
 class CL_PRETRAIN(FinetuningModel):
     def __init__(self, feat_dim, num_class, inner_param, **kwargs):
         super(CL_PRETRAIN, self).__init__(**kwargs)
@@ -92,9 +91,7 @@ class CL_PRETRAIN(FinetuningModel):
         self.disclass = distLinear(feat_dim, num_class)
         self.loss_func = nn.CrossEntropyLoss()
 
-        # 定义 MLP
-        mlp_hidden_dim = 128  # 请根据需要调整隐藏层维度
-        self.mlp = MLP(feat_dim, mlp_hidden_dim, feat_dim)
+        self.mlp = MLP(feat_dim, num_class)
 
     def set_forward(self, batch):
         image, global_target = batch
@@ -137,27 +134,23 @@ class CL_PRETRAIN(FinetuningModel):
         image1 = images[0]
         image1 = image1.to(self.device)
         (
-            X1
+            X1, _, _, _
         ) = self.split_by_episode(image1, mode=2)
 
         image2 = images[1]
         image2 = image2.to(self.device)
         (
-            X2
+            X2, _, _, _
         ) = self.split_by_episode(image2, mode=2)
 
         X1 = self.my_forward(X1)
         X2 = self.my_forward(X2)
 
-        # 假设已经有一个特征提取函数和分类器，这里用 feat_extractor 和 classifier 表示 cnn
+        X = torch.cat([X1, X2], dim=0)
+
         feat_extractor = self.emb_func
-        classifier = self.cls_classifier
-
         # 获取全局特征
-        global_feat = feat_extractor(X1)
-        global_output = classifier(global_feat)
-
-        L_CE = self.loss_func(global_output, target)
+        global_feat = feat_extractor(X)
 
         # 定义温度参数
         tau1 = 0.1
@@ -165,10 +158,17 @@ class CL_PRETRAIN(FinetuningModel):
         tau3 = 0.1
         tau4 = 0.1
 
-        # 计算全局自监督对比损失
-        l_ss_global = self.global_contrastive_loss(global_feat, tau1)
+        # 定义权重系数
+        alpha1 = 1.0
+        alpha2 = 1.0
+        alpha3 = 1.0
 
-        # 示例用法
+        classifier = self.classifier
+        output = classifier(global_feat)
+        L_CE = self.loss_func(output, target)
+
+        l_ss_global = self.contrastive_loss(global_feat, tau1)
+
         input_dim = 256  # 输入特征的维度
         output_dim = 128  # 投影头输出的维度
 
@@ -182,37 +182,55 @@ class CL_PRETRAIN(FinetuningModel):
         l_ss_local_vm = self.vec_map_loss(ui, za, tau3)
 
         # 计算全局监督对比损失
-        l_s_global = self.supervised_contrastive_loss(global_output, target, tau4)
-
-        # 定义权重系数
-        alpha1 = 1.0
-        alpha2 = 1.0
-        alpha3 = 1.0
-
+        l_s_global = self.supervised_contrastive_loss(global_feat, target, tau4)
         # 计算总体损失
         total_loss = L_CE + alpha1 * l_ss_global + alpha2 * (l_ss_local_mm + l_ss_local_vm) + alpha3 * l_s_global
 
+        optimizer = self.sub_optimizer(classifier, self.inner_param["inner_optim"])
+        optimizer.zero_grad()
+        total_loss.backward()
+        optimizer.step()
+
         # 计算准确率
-        _, predicted = torch.max(global_output, 1)
+        _, predicted = torch.max(global_feat, 1)
         accuracy = (predicted == target).sum().item() / target.size(0)
 
-        return global_output, accuracy, total_loss
+        # 返回分类输出、准确率以及前向损失
+        return global_feat, accuracy, total_loss
 
-    def global_contrastive_loss(self, x, temperature):
-        x = self.projection.forward(x)
+    def contrastive_loss(self, features, temperature):
+        """
+        计算全局自监督对比损失
+        Args:
+        - features: 特征张量，形状为 [2N, D]
+        - temperature: 温度参数，一个标量
+        Returns:
+        - loss: 计算得到的损失值
+        """
+        features = self.projection.forward(features)
 
-        # x: (2N, D)
-        N, D = x.shape
-        # 对投影向量进行标准化
-        x = F.normalize(x, dim=1)
-        # 计算相似性矩阵
-        sim_matrix = torch.matmul(x, x.t()) / temperature
-        # 构造与公式中∑中的 \mathbbm1 部分相对应的 mask
-        mask = torch.eye(2 * N).bool()
-        # 计算损失
-        loss = -torch.sum(F.log_softmax(sim_matrix, dim=1)[mask]) / N
+        N = features.shape[0] // 2  # 因为每个正样本对中有两个样本
 
-        return loss
+        # 计算特征的归一化版本
+        features = F.normalize(features, dim=1)
+
+        # 计算相似度矩阵
+        sim_matrix = torch.mm(features, features.T) / temperature
+
+        # 为了计算损失，我们需要对每个正样本对提取相应的相似度
+        sim_ij = torch.diag(sim_matrix, N) + torch.diag(sim_matrix, -N)
+        sim_ij = torch.cat((sim_ij, sim_ij), dim=0)
+
+        # 创建掩码矩阵，用于选择非对角线元素
+        mask = torch.ones_like(sim_matrix)
+        mask = mask.fill_diagonal_(0).bool()
+
+        # 计算分母（即所有负样本对的相似度的和）
+        neg_sim = sim_matrix.masked_select(mask).view(2 * N, -1)
+
+        # 计算对数损失
+        loss = -torch.log(torch.exp(sim_ij) / torch.exp(neg_sim).sum(dim=1))
+        return loss.mean()
 
     def map_map_loss(self, xa, xb, temperature):
         # xa, xb: (B, HW, D)
@@ -228,27 +246,41 @@ class CL_PRETRAIN(FinetuningModel):
         loss = -torch.sum(F.log_softmax(sim_matrix, dim=1)[mask]) / ui.size(0)
         return loss
 
-    def supervised_contrastive_loss(self, x, target, temperature):
-        x = self.projection.forward(x)
+    def supervised_contrastive_loss(self, features, labels, temperature):
+        """
+        计算全局监督对比损失
+        Args:
+        - features: 特征张量，形状为 [2N, D]
+        - labels: 标签张量，形状为 [2N]
+        - temperature: 温度参数，一个标量
+        Returns:
+        - loss: 计算得到的损失值
+        """
+        device = features.device
+        N = features.shape[0] // 2  # 因为每个正样本对中有两个样本
 
-        # x: (2N, D), target: (2N,)
-        N, D = x.shape
-        x = F.normalize(x, dim=1)
+        # 计算特征的归一化版本
+        features = F.normalize(features, dim=1)
 
-        sim_matrix = torch.matmul(x, x.t()) / temperature
+        # 计算相似度矩阵
+        sim_matrix = torch.mm(features, features.T) / temperature
 
-        loss = 0
+        # 初始化损失值
+        loss = 0.0
+
+        # 计算损失
         for i in range(2 * N):
-            positive_samples = (target == target[i]).nonzero().squeeze()
+            # 正样本对
+            pos_mask = (labels == labels[i]) & ~torch.eye(2 * N, dtype=bool, device=device)
+            pos_sim = sim_matrix[i][pos_mask]
 
-            numerator = torch.exp(sim_matrix[i, positive_samples])
-            denominator = torch.sum(torch.exp(sim_matrix[i, :]))
+            # 所有样本（包括正负样本对）
+            all_sim = sim_matrix[i]
 
-            loss += -torch.log(numerator / denominator)
+            # 计算损失
+            loss += -torch.log(torch.sum(torch.exp(pos_sim)) / torch.sum(torch.exp(all_sim)))
 
-        loss /= 2 * N  # Normalize by the number of samples
-
-        return loss
+        return loss / (2 * N)
 
     def set_forward_adaptation(self, support_feat, support_target, query_feat):
         classifier = distLinear(self.feat_dim, self.test_way)

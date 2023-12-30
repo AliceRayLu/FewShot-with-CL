@@ -12,33 +12,6 @@ from torch.nn.utils.weight_norm import WeightNorm
 import numpy as np
 from torch.autograd import Variable
 
-
-class distLinear(nn.Module):
-    def __init__(self, indim, outdim):
-        super(distLinear, self).__init__()
-        self.L = nn.Linear(indim, outdim, bias=False)
-        self.class_wise_learnable_norm = True  # See the issue#4&8 in the github
-        if self.class_wise_learnable_norm:
-            WeightNorm.apply(self.L, 'weight', dim=0)  # split the weight update component to direction and norm
-
-        if outdim <= 200:
-            self.scale_factor = 2  # a fixed scale factor to scale the output of cos value into a reasonably large input for softmax
-        else:
-            self.scale_factor = 10 # in omniglot, a larger scale factor is required to handle >1000 output classes.
-
-    def forward(self, x):
-        x_norm = torch.norm(x, p=2, dim=1).unsqueeze(1).expand_as(x)
-        x_normalized = x.div(x_norm + 0.00001)
-        if not self.class_wise_learnable_norm:
-            L_norm = torch.norm(self.L.weight.data, p=2, dim=1).unsqueeze(1).expand_as(self.L.weight.data)
-            self.L.weight.data = self.L.weight.data.div(L_norm + 0.00001)
-        cos_dist = self.L(
-            x_normalized)  # matrix product by forward function, but when using WeightNorm, this also multiply the cosine distance by a class-wise learnable norm, see the issue#4&8 in the github
-        scores = self.scale_factor * (cos_dist)
-
-        return scores
-
-
 class SpatialProjectionHead(torch.nn.Module):
     def __init__(self, input_dim, output_dim):
         super(SpatialProjectionHead, self).__init__()
@@ -87,11 +60,9 @@ class CL_PRETRAIN(FinetuningModel):
         self.inner_param = inner_param
 
         self.classifier = nn.Linear(feat_dim, num_class)
-        self.classifier_rot = nn.Linear(feat_dim, 4)
-        self.disclass = distLinear(feat_dim, num_class)
         self.loss_func = nn.CrossEntropyLoss()
 
-        self.mlp = MLP(feat_dim, num_class)
+        self.projection = MLP(feat_dim, num_class)
 
     def set_forward(self, batch):
         image, global_target = batch
@@ -173,11 +144,11 @@ class CL_PRETRAIN(FinetuningModel):
         output_dim = 128  # 投影头输出的维度
 
         spatial_projection_head = SpatialProjectionHead(input_dim, output_dim)
-        xa, xb = spatial_projection_head(torch.rand(32, input_dim, 8, 8))  # 32 个样本
+        xa, xb = spatial_projection_head(torch.rand(32, input_dim, 8, 8))
         l_ss_local_mm = self.map_map_loss(xa, xb, tau2)
 
         vector_map_module = VectorMapModule(input_dim, output_dim)
-        x_sample = torch.rand(32, input_dim)  # 32个样本
+        x_sample = torch.rand(32, input_dim)
         ui, za = vector_map_module(x_sample)
         l_ss_local_vm = self.vec_map_loss(ui, za, tau3)
 
@@ -185,11 +156,6 @@ class CL_PRETRAIN(FinetuningModel):
         l_s_global = self.supervised_contrastive_loss(global_feat, target, tau4)
         # 计算总体损失
         total_loss = L_CE + alpha1 * l_ss_global + alpha2 * (l_ss_local_mm + l_ss_local_vm) + alpha3 * l_s_global
-
-        optimizer = self.sub_optimizer(classifier, self.inner_param["inner_optim"])
-        optimizer.zero_grad()
-        total_loss.backward()
-        optimizer.step()
 
         # 计算准确率
         _, predicted = torch.max(global_feat, 1)
@@ -232,11 +198,16 @@ class CL_PRETRAIN(FinetuningModel):
         loss = -torch.log(torch.exp(sim_ij) / torch.exp(neg_sim).sum(dim=1))
         return loss.mean()
 
-    def map_map_loss(self, xa, xb, temperature):
-        # xa, xb: (B, HW, D)
-        sim_matrix = torch.matmul(xa, xb.permute(0, 2, 1)) / temperature
-        mask = torch.eye(xa.size(1)).bool()
-        loss = -torch.sum(F.log_softmax(sim_matrix, dim=1)[mask]) / xa.size(0)
+    def map_map_loss(self, local_features_q, local_features_k, temperature):
+        B, N, D = local_features_q.shape
+        local_features_q = F.normalize(local_features_q, dim=2)  # 归一化
+        local_features_k = F.normalize(local_features_k, dim=2)
+        sim_matrix = torch.bmm(local_features_q, local_features_k.transpose(1, 2)) / temperature
+        sim_matrix = torch.exp(sim_matrix)  # 指数化
+        mask = ~torch.eye(N, dtype=bool, device=local_features_q.device)  # 排除自身比较
+        denom = sim_matrix.masked_fill(~mask, 0).sum(dim=2, keepdim=True)
+        pos_sim = torch.exp(torch.sum(local_features_q * local_features_k, dim=2) / temperature)
+        loss = -torch.log(pos_sim / denom.squeeze()).mean()
         return loss
 
     def vec_map_loss(self, ui, za, tau):
@@ -256,6 +227,8 @@ class CL_PRETRAIN(FinetuningModel):
         Returns:
         - loss: 计算得到的损失值
         """
+        features = self.projection.forward(features)
+
         device = features.device
         N = features.shape[0] // 2  # 因为每个正样本对中有两个样本
 
@@ -283,30 +256,34 @@ class CL_PRETRAIN(FinetuningModel):
         return loss / (2 * N)
 
     def set_forward_adaptation(self, support_feat, support_target, query_feat):
-        classifier = distLinear(self.feat_dim, self.test_way)
-        optimizer = self.sub_optimizer(classifier, self.inner_param["inner_optim"])
-
+        # 创建一个分类器，可以是你模型的一部分，也可以是单独的模型
+        classifier = self.classifier()  # 你需要实现 create_classifier 方法
+        # 将分类器移到设备上
         classifier = classifier.to(self.device)
-
+        # 设置为训练模式
         classifier.train()
+        # 获取支持集的大小
         support_size = support_feat.size(0)
-
+        # 设置内部训练的优化器
+        optimizer = self.sub_optimizer(classifier, self.inner_param["inner_optim"])
+        # 迭代进行多次梯度更新
         for epoch in range(self.inner_param["inner_train_iter"]):
+            # 随机排列索引
             rand_id = torch.randperm(support_size)
+            # 按批次更新梯度
             for i in range(0, support_size, self.inner_param["inner_batch_size"]):
                 optimizer.zero_grad()
                 select_id = rand_id[i: min(i + self.inner_param["inner_batch_size"], support_size)]
                 batch = support_feat[select_id]
-                target = support_target[select_id]
-                # print(batch.size())
-                output = classifier(batch)
-
-                loss = self.loss_func(output, target)
-
+                # 计算损失
+                _, _, loss = self.set_forward_loss(batch)
+                # 反向传播和梯度更新
                 loss.backward()
                 optimizer.step()
 
+        # 在查询集上进行前向传播
         output = classifier(query_feat)
+
         return output
 
     def rot_image_generation(self, image, target):

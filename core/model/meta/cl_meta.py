@@ -42,14 +42,13 @@ class CL_META(MetaModel):
         self.way_num = way_num
         self.attention = Attn(feat_dim*class_num)  # TODO: embed_dim
         self.optimizer = SGD(params=[...], lr=0.01, momentum=0.9, weight_decay=5e-4)
-        self.scheduler = StepLR(optimizer, step_size=40, gamma=0.5)
+        self.scheduler = StepLR(self.optimizer, step_size=40, gamma=0.5)
 
         convert_maml_module(self)
 
     def forward_output(self, x):
         feat_wo_head = self.emb_func(x)
-        feat_w_head = self.classifier(feat_wo_head)
-        return feat_wo_head, feat_w_head
+        return feat_wo_head
 
     def set_forward(self, batch):
         image, global_target = batch
@@ -65,7 +64,7 @@ class CL_META(MetaModel):
         output_list = []
         for i in range(episode_size):
             episode_query_image = query_image[i].contiguous().reshape(-1, c, h, w)
-            _, output = self.forward_output(episode_query_image)
+            output = self.forward_output(episode_query_image)
             output_list.append(output)
 
         output = torch.cat(output_list, dim=0)
@@ -78,7 +77,7 @@ class CL_META(MetaModel):
         output_list = []
         for i in range(episode_size):
             episode_image = X[i].contiguous().reshape(-1, c, h, w)
-            _, output = self.forward_output(episode_image)
+            output = self.forward_output(episode_image)
             output_list.append(output)
 
         output = torch.cat(output_list, dim=0)

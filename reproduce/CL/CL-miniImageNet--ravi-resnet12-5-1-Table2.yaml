@@ -14,7 +14,7 @@ image_size: 64 # TODO:
 backbone:
   kwargs:
     kwargs:
-    avg_pool: False
+    avg_pool: True
     is_flatten: False
     keep_prob: 0.0
     maxpool_last2: False

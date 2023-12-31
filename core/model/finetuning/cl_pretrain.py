@@ -164,40 +164,6 @@ class CL_PRETRAIN(FinetuningModel):
         # 返回分类输出、准确率以及前向损失
         return global_feat, accuracy, total_loss
 
-    def contrastive_loss(self, features, temperature):
-        """
-        计算全局自监督对比损失
-        Args:
-        - features: 特征张量，形状为 [2N, D]
-        - temperature: 温度参数，一个标量
-        Returns:
-        - loss: 计算得到的损失值
-        """
-        features = self.projection.forward(features)
-
-        N = features.shape[0] // 2  # 因为每个正样本对中有两个样本
-
-        # 计算特征的归一化版本
-        features = F.normalize(features, dim=1)
-
-        # 计算相似度矩阵
-        sim_matrix = torch.mm(features, features.T) / temperature
-
-        # 为了计算损失，我们需要对每个正样本对提取相应的相似度
-        sim_ij = torch.diag(sim_matrix, N) + torch.diag(sim_matrix, -N)
-        sim_ij = torch.cat((sim_ij, sim_ij), dim=0)
-
-        # 创建掩码矩阵，用于选择非对角线元素
-        mask = torch.ones_like(sim_matrix)
-        mask = mask.fill_diagonal_(0).bool()
-
-        # 计算分母（即所有负样本对的相似度的和）
-        neg_sim = sim_matrix.masked_select(mask).view(2 * N, -1)
-
-        # 计算对数损失
-        loss = -torch.log(torch.exp(sim_ij) / torch.exp(neg_sim).sum(dim=1))
-        return loss.mean()
-
     def map_map_loss(self, local_features_q, local_features_k, temperature):
         B, N, D = local_features_q.shape
         local_features_q = F.normalize(local_features_q, dim=2)  # 归一化
@@ -255,9 +221,43 @@ class CL_PRETRAIN(FinetuningModel):
 
         return loss / (2 * N)
 
+    def contrastive_loss(self, features, temperature):
+        """
+        计算全局自监督对比损失
+        Args:
+        - features: 特征张量，形状为 [2N, D]
+        - temperature: 温度参数，一个标量
+        Returns:
+        - loss: 计算得到的损失值
+        """
+        features = self.projection.forward(features)
+
+        N = features.shape[0] // 2  # 因为每个正样本对中有两个样本
+
+        # 计算特征的归一化版本
+        features = F.normalize(features, dim=1)
+
+        # 计算相似度矩阵
+        sim_matrix = torch.mm(features, features.T) / temperature
+
+        # 为了计算损失，我们需要对每个正样本对提取相应的相似度
+        sim_ij = torch.diag(sim_matrix, N) + torch.diag(sim_matrix, -N)
+        sim_ij = torch.cat((sim_ij, sim_ij), dim=0)
+
+        # 创建掩码矩阵，用于选择非对角线元素
+        mask = torch.ones_like(sim_matrix)
+        mask = mask.fill_diagonal_(0).bool()
+
+        # 计算分母（即所有负样本对的相似度的和）
+        neg_sim = sim_matrix.masked_select(mask).view(2 * N, -1)
+
+        # 计算对数损失
+        loss = -torch.log(torch.exp(sim_ij) / torch.exp(neg_sim).sum(dim=1))
+        return loss.mean()
+
     def set_forward_adaptation(self, support_feat, support_target, query_feat):
-        # 创建一个分类器，可以是你模型的一部分，也可以是单独的模型
-        classifier = self.classifier()  # 你需要实现 create_classifier 方法
+        # 创建一个分类器，可以是模型的一部分，也可以是单独的模型
+        classifier = self.classifier()  # 需要实现 create_classifier 方法
         # 将分类器移到设备上
         classifier = classifier.to(self.device)
         # 设置为训练模式

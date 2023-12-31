@@ -157,20 +157,22 @@ class CL_META(MetaModel):
                              features_support2, features_query2, support_y2, query_y2, tau5)
 
         loss = L_meta + beta * L_info
-        grad = torch.autograd.grad(
-            loss, fast_parameters, create_graph=True, allow_unused=True
-        )
-        fast_parameters = []
+        # grad = torch.autograd.grad(
+        #     loss, fast_parameters, create_graph=True, allow_unused=True
+        # )
+        # fast_parameters = []
 
-        for k, weight in enumerate(self.named_parameters()):
-            if grad[k] is None:
-                continue
-            lr = classifier_lr if "Linear" in weight[0] else extractor_lr
-            if weight[1].fast is None:
-                weight[1].fast = weight[1] - lr * grad[k]
-            else:
-                weight[1].fast = weight[1].fast - lr * grad[k]
-            fast_parameters.append(weight[1].fast)
+        loss.backward()
+
+        # for k, weight in enumerate(self.named_parameters()):
+        #     if grad[k] is None:
+        #         continue
+        #     lr = classifier_lr if "Linear" in weight[0] else extractor_lr
+        #     if weight[1].fast is None:
+        #         weight[1].fast = weight[1] - lr * grad[k]
+        #     else:
+        #         weight[1].fast = weight[1].fast - lr * grad[k]
+        #     fast_parameters.append(weight[1].fast)
 
         return loss
 

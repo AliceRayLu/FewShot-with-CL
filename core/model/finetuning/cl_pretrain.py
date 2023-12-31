@@ -144,12 +144,11 @@ class CL_PRETRAIN(FinetuningModel):
         output_dim = 128  # 投影头输出的维度
 
         spatial_projection_head = SpatialProjectionHead(input_dim, output_dim)
-        xa, xb = spatial_projection_head(torch.rand(32, input_dim, 8, 8))
+        xa, xb = spatial_projection_head(global_feat)
         l_ss_local_mm = self.map_map_loss(xa, xb, tau2)
 
         vector_map_module = VectorMapModule(input_dim, output_dim)
-        x_sample = torch.rand(32, input_dim)
-        ui, za = vector_map_module(x_sample)
+        ui, za = vector_map_module(global_feat)
         l_ss_local_vm = self.vec_map_loss(ui, za, tau3)
 
         # 计算全局监督对比损失

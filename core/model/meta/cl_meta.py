@@ -2,7 +2,7 @@ import torch
 from torch import nn
 from torch.optim import SGD
 from torch.optim.lr_scheduler import StepLR
-from core.model import convert_maml_module, MetaModel
+from core.model import MetaModel
 from core.utils import accuracy
 
 import math
@@ -19,36 +19,34 @@ class MLP(nn.Module):  # MLP with one hidden layer
         x = self.hidden(x)
         x = self.act_func(x)
         return x
-    
-class Attn(nn.Module): # Multi-head attention with heads fixed to 1
-    
+
+
+class Attn(nn.Module):  # Multi-head attention with heads fixed to 1
+
     def __init__(self, embed_dim):
         super(Attn, self).__init__()
         self.attn = nn.MultiheadAttention(embed_dim, 1)
 
-    def forward(self, support_img , query_img, support_target):
+    def forward(self, support_img, query_img, support_target):
         output, weights = self.attn(query_img, support_target, support_img)
         return output
 
 
 class CL_META(MetaModel):
-    # TODO : loss_func  emb_func(include GAP)
-    def __init__(self, feat_dim, class_num, way_num, loss_func, inner_param, **kwargs):
+    # TODO : emb_func(include GAP)
+    def __init__(self, feat_dim, class_num, way_num, **kwargs):
         super(CL_META, self).__init__(**kwargs)
         self.feat_dim = feat_dim
-        self.inner_param = inner_param
-        self.loss_func = loss_func
         self.projection = MLP(feat_dim, class_num)
         self.way_num = way_num
-        self.attention = Attn(feat_dim*class_num)  # TODO: embed_dim
+        self.attention = Attn(feat_dim * class_num)  # TODO: embed_dim
         self.optimizer = SGD(params=[...], lr=0.01, momentum=0.9, weight_decay=5e-4)
         self.scheduler = StepLR(self.optimizer, step_size=40, gamma=0.5)
 
-        convert_maml_module(self)
-
     def forward_output(self, x):
         feat_wo_head = self.emb_func(x)
-        return feat_wo_head
+        feat_w_head = self.projection.forward(x)
+        return feat_wo_head, feat_w_head
 
     def set_forward(self, batch):
         image, global_target = batch
@@ -59,29 +57,26 @@ class CL_META(MetaModel):
             support_target,
             query_target,
         ) = self.split_by_episode(image, mode=2)
-        episode_size, _, c, h, w = support_image.size()
+        support_size, _, c, h, w = support_image.size()
+        query_size,_,c,h,w = query_image.size()
 
+        support_output = self.emb_func(support_image)
+        prototype = self.crk(support_output,support_target)
         output_list = []
-        for i in range(episode_size):
+        for i in range(query_size): # 对每一条query，找到最类似的某一类的prototype，然后预测
             episode_query_image = query_image[i].contiguous().reshape(-1, c, h, w)
-            output = self.forward_output(episode_query_image)
+            vec = self.emb_func(episode_query_image)
+            maxp = 0
+            for j in range(support_size):
+                curp = self.P(vec,support_target[j],prototype)
+                if curp > maxp:
+                    maxp = curp
+                    output = support_target[j]
             output_list.append(output)
 
         output = torch.cat(output_list, dim=0)
         acc = accuracy(output, query_target.contiguous().view(-1))
         return output, acc
-
-    def my_forward(self, X):
-        # 传入 support_image、query_image...
-        episode_size, _, c, h, w = X.size()
-        output_list = []
-        for i in range(episode_size):
-            episode_image = X[i].contiguous().reshape(-1, c, h, w)
-            output = self.forward_output(episode_image)
-            output_list.append(output)
-
-        output = torch.cat(output_list, dim=0)
-        return output
 
     def set_forward_loss(self, batch):
         images, _ = batch
@@ -103,31 +98,63 @@ class CL_META(MetaModel):
             query_y2,
         ) = self.split_by_episode(image2, mode=2)
 
-        # extractor_lr = self.inner_param["extractor_lr"]
-        # classifier_lr = self.inner_param["classifier_lr"]
+        episode_size, _, c, h, w = support_X1.size()
 
-        extractor_lr = self.scheduler.get_last_lr()[0]
-        classifier_lr = self.scheduler.get_last_lr()[0]
+        output_list = []
+        loss = []
+        acc = []
 
+        for i in range(episode_size):
+            episode_support_X1 = support_X1[i].contiguous().reshape(-1, c, h, w)
+            episode_support_X2 = support_X2[i].contiguous().reshape(-1, c, h, w)
+            episode_query_X1 = query_X1[i].contiguous().reshape(-1, c, h, w)
+            episode_query_X2 = query_X2[i].contiguous().reshape(-1, c, h, w)
+            episode_support_y1 = support_y1[i].reshape(-1)
+            episode_support_y2 = support_y2[i].reshape(-1)
+            episode_query_y1 = query_y1[i].reshape(-1)
+            episode_query_y2 = query_y2[i].reshape(-1)
+
+            cur_loss = self.set_forward_adaptation(episode_support_X1, episode_query_X1,
+                                                   episode_support_y1, episode_query_y1,
+                                                   episode_support_X2, episode_query_X2,
+                                                   episode_support_y2, episode_query_y2)
+            loss.append(cur_loss)
+
+            features1, output1 = self.forward_output(episode_query_X1)
+            features2, output2 = self.forward_output(episode_query_X2)
+            acc.append(accuracy(output1, episode_query_y1))
+            acc.append(accuracy(output2, episode_query_y2))
+
+            output_list.append(torch.cat((output1, output2)), dim=0)
+
+        output = torch.cat(output_list, dim=0)
+
+        acc = sum(acc) / len(acc)
+        loss = sum(loss) / len(loss)
+
+        return output, acc, loss
+
+    def set_forward_adaptation(self, support_X1, query_X1, support_y1, query_y1,
+                               support_X2, query_X2, support_y2, query_y2):
+        # 这里传入的是单个episode！！
         fast_parameters = list(item[1] for item in self.named_parameters())
         for parameter in self.parameters():
             parameter.fast = None
         self.emb_func.train()
         self.classifier.train()
 
-        support_X1 = self.my_forward(support_X1)
-        support_X2 = self.my_forward(support_X2)
-        query_X1 = self.my_forward(query_X1)
-        query_X2 = self.my_forward(query_X2)
+        features_support1, _ = self.forward_output(support_X1)
+        features_support2, _ = self.forward_output(support_X2)
+        features_query1, _ = self.forward_output(query_X1)
+        features_query2, _ = self.forward_output(query_X2)
 
         tau5 = 0.1
         beta = 0.01
 
-
-        L_meta = self.L_meta(support_X1, query_X1, support_y1, query_y1,
-                    support_X2, query_X2, support_y2, query_y2)
-        L_info = self.L_info(support_X1, query_X1, support_y1, query_y1,
-                    support_X2, query_X2, support_y2, query_y2, tau5)
+        L_meta = self.L_meta(features_support1, features_query1, support_y1, query_y1,
+                             features_support2, features_query2, support_y2, query_y2)
+        L_info = self.L_info(features_support1, features_query1, support_y1, query_y1,
+                             features_support2, features_query2, support_y2, query_y2, tau5)
 
         loss = L_meta + beta * L_info
         grad = torch.autograd.grad(
@@ -138,13 +165,14 @@ class CL_META(MetaModel):
         for k, weight in enumerate(self.named_parameters()):
             if grad[k] is None:
                 continue
-            # TODO : linear要设置吗 ???
             lr = classifier_lr if "Linear" in weight[0] else extractor_lr
             if weight[1].fast is None:
                 weight[1].fast = weight[1] - lr * grad[k]
             else:
                 weight[1].fast = weight[1].fast - lr * grad[k]
             fast_parameters.append(weight[1].fast)
+
+        return loss
 
     def crk(self, X, y):
         # 输入一个经过GAP的 **support set**
@@ -213,8 +241,8 @@ class CL_META(MetaModel):
         c2 = self.crk(support_X2, support_y2)
 
         # TODO : attention how to forward
-        c1 = self.attention.forward(c1,query_X1,support_y1)
-        c2 = self.attention.forward(c2,query_X2,support_y2)
+        c1 = self.attention.forward(c1, query_X1, support_y1)
+        c2 = self.attention.forward(c2, query_X2, support_y2)
 
         Lmeta = self.L_mn(query_X1, query_y1, c1) + self.L_mn(query_X1, query_y1, c2) + \
                 self.L_mn(query_X2, query_y2, c1) + self.L_mn(query_X2, query_y2, c2)
@@ -258,7 +286,7 @@ class CL_META(MetaModel):
         merged_query_y = torch.cat([query_y1, query_y2], dim=0)
 
         A = torch.cat([support_X1, support_X2,
-                       self.crk(support_X1,support_y1),
+                       self.crk(support_X1, support_y1),
                        self.crk(support_X2, support_y2)])
 
         merged_support_X = torch.cat([support_X1, support_X2], dim=0)

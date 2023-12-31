@@ -28,6 +28,31 @@ class SpatialProjectionHead(torch.nn.Module):
         v = self.fv(x)
         return q, k, v
 
+class GlobalSSContrastiveLoss(torch.nn.Module):
+    #全局自监督对比损失
+    def __init__(self, temperature):
+        super(GlobalSSContrastiveLoss, self).__init__()
+        self.temperature = temperature
+
+    def forward(self, z_i, z_i_prime):
+        # 计算相似度分数
+        scores = torch.einsum("bi,bi->b", z_i, z_i_prime) / self.temperature
+
+        # 计算正样本对的logits
+        exp_scores_pos = torch.exp(scores)
+
+        # 计算负样本对的logits
+        exp_scores_neg = torch.sum(torch.exp(scores), dim=-1, keepdim=True) - exp_scores_pos
+
+        # 添加indicator function
+        # 使用掩码矩阵排除对角线元素
+        mask = torch.eye(len(scores), dtype=torch.bool)
+        exp_scores_neg = exp_scores_neg.masked_fill(mask, 0)
+
+        # 计算对比损失
+        loss = -torch.log(exp_scores_pos / (exp_scores_pos + exp_scores_neg))
+
+        return loss.mean()
 
 class VectorMapModule(nn.Module):
     def __init__(self, input_dim, output_dim):
@@ -138,10 +163,22 @@ class CL_PRETRAIN(FinetuningModel):
         output = classifier(global_feat)
         L_CE = self.loss_func(output, target)
 
-        l_ss_global = self.contrastive_loss(global_feat, tau1)
 
         input_dim = 256  # 输入特征的维度
         output_dim = 128  # 投影头输出的维度
+
+        #新的计算全局自监督对比损失
+
+        N = global_feat.shape[0] // 2
+        # 使用 MLP 投影头得到 z_i 和 z_i_prime
+        projection_head = SpatialProjectionHead(input_dim, output_dim)
+        z_i, _, _ = projection_head(global_feat[:N])
+        z_i_prime, _, _ = projection_head(global_feat[N:])
+
+        ss_contrastive_loss = GlobalSSContrastiveLoss(temperature=tau1)
+        l_ss_global = ss_contrastive_loss(z_i, z_i_prime)
+
+ # 旧的      l_ss_global = self.contrastive_loss(global_feat, tau1)
 
         spatial_projection_head = SpatialProjectionHead(input_dim, output_dim)
         xa, xb = spatial_projection_head(global_feat)
@@ -163,51 +200,6 @@ class CL_PRETRAIN(FinetuningModel):
         # 返回分类输出、准确率以及前向损失
         return global_feat, accuracy, total_loss
 
-    def contrastive_loss(self, features, temperature):
-        """
-        计算全局自监督对比损失
-        Args:
-        - features: 特征张量，形状为 [2N, D]
-        - temperature: 温度参数，一个标量
-        Returns:
-        - loss: 计算得到的损失值
-        """
-        features = self.projection.forward(features)
-
-        N = features.shape[0] // 2  # 因为每个正样本对中有两个样本
-
-        # 计算特征的归一化版本
-        features = F.normalize(features, dim=1)
-
-        # 计算相似度矩阵
-        sim_matrix = torch.mm(features, features.T) / temperature
-
-        # 为了计算损失，我们需要对每个正样本对提取相应的相似度
-        sim_ij = torch.diag(sim_matrix, N) + torch.diag(sim_matrix, -N)
-        sim_ij = torch.cat((sim_ij, sim_ij), dim=0)
-
-        # 创建掩码矩阵，用于选择非对角线元素
-        mask = torch.ones_like(sim_matrix)
-        mask = mask.fill_diagonal_(0).bool()
-
-        # 计算分母（即所有负样本对的相似度的和）
-        neg_sim = sim_matrix.masked_select(mask).view(2 * N, -1)
-
-        # 计算对数损失
-        loss = -torch.log(torch.exp(sim_ij) / torch.exp(neg_sim).sum(dim=1))
-        return loss.mean()
-
-    def map_map_loss(self, local_features_q, local_features_k, temperature):
-        B, N, D = local_features_q.shape
-        local_features_q = F.normalize(local_features_q, dim=2)  # 归一化
-        local_features_k = F.normalize(local_features_k, dim=2)
-        sim_matrix = torch.bmm(local_features_q, local_features_k.transpose(1, 2)) / temperature
-        sim_matrix = torch.exp(sim_matrix)  # 指数化
-        mask = ~torch.eye(N, dtype=bool, device=local_features_q.device)  # 排除自身比较
-        denom = sim_matrix.masked_fill(~mask, 0).sum(dim=2, keepdim=True)
-        pos_sim = torch.exp(torch.sum(local_features_q * local_features_k, dim=2) / temperature)
-        loss = -torch.log(pos_sim / denom.squeeze()).mean()
-        return loss
 
     def vec_map_loss(self, ui, za, tau):
         # ui: (B, D, HW), za: (B, D)
@@ -254,9 +246,22 @@ class CL_PRETRAIN(FinetuningModel):
 
         return loss / (2 * N)
 
+    def map_map_loss(self, local_features_q, local_features_k, temperature):
+        B, N, D = local_features_q.shape
+        local_features_q = F.normalize(local_features_q, dim=2)  # 归一化
+        local_features_k = F.normalize(local_features_k, dim=2)
+        sim_matrix = torch.bmm(local_features_q, local_features_k.transpose(1, 2)) / temperature
+        sim_matrix = torch.exp(sim_matrix)  # 指数化
+        mask = ~torch.eye(N, dtype=bool, device=local_features_q.device)  # 排除自身比较
+        denom = sim_matrix.masked_fill(~mask, 0).sum(dim=2, keepdim=True)
+        pos_sim = torch.exp(torch.sum(local_features_q * local_features_k, dim=2) / temperature)
+        loss = -torch.log(pos_sim / denom.squeeze()).mean()
+        return loss
+
+
     def set_forward_adaptation(self, support_feat, support_target, query_feat):
-        # 创建一个分类器，可以是你模型的一部分，也可以是单独的模型
-        classifier = self.classifier()  # 你需要实现 create_classifier 方法
+        # 创建一个分类器，可以是模型的一部分，也可以是单独的模型
+        classifier = self.classifier()  # 需要实现 create_classifier 方法
         # 将分类器移到设备上
         classifier = classifier.to(self.device)
         # 设置为训练模式
@@ -308,3 +313,4 @@ class CL_PRETRAIN(FinetuningModel):
         target_class = torch.tensor(target_class).to(self.device)
         target_rot_class = torch.tensor(target_rot_class).to(self.device)
         return image_rot, target_class, target_rot_class
+

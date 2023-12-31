@@ -57,12 +57,21 @@ class CL_META(MetaModel):
             support_target,
             query_target,
         ) = self.split_by_episode(image, mode=2)
-        episode_size, _, c, h, w = support_image.size()
+        support_size, _, c, h, w = support_image.size()
+        query_size,_,c,h,w = query_image.size()
 
+        support_output = self.emb_func(support_image)
+        prototype = self.crk(support_output,support_target)
         output_list = []
-        for i in range(episode_size):
+        for i in range(query_size): # 对每一条query，找到最类似的某一类的prototype，然后预测
             episode_query_image = query_image[i].contiguous().reshape(-1, c, h, w)
-            output = self.forward_output(episode_query_image)
+            vec = self.emb_func(episode_query_image)
+            maxp = 0
+            for j in range(support_size):
+                curp = self.P(vec,support_target[j],prototype)
+                if curp > maxp:
+                    maxp = curp
+                    output = support_target[j]
             output_list.append(output)
 
         output = torch.cat(output_list, dim=0)

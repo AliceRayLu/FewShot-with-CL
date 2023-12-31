@@ -164,17 +164,6 @@ class CL_PRETRAIN(FinetuningModel):
         # 返回分类输出、准确率以及前向损失
         return global_feat, accuracy, total_loss
 
-    def map_map_loss(self, local_features_q, local_features_k, temperature):
-        B, N, D = local_features_q.shape
-        local_features_q = F.normalize(local_features_q, dim=2)  # 归一化
-        local_features_k = F.normalize(local_features_k, dim=2)
-        sim_matrix = torch.bmm(local_features_q, local_features_k.transpose(1, 2)) / temperature
-        sim_matrix = torch.exp(sim_matrix)  # 指数化
-        mask = ~torch.eye(N, dtype=bool, device=local_features_q.device)  # 排除自身比较
-        denom = sim_matrix.masked_fill(~mask, 0).sum(dim=2, keepdim=True)
-        pos_sim = torch.exp(torch.sum(local_features_q * local_features_k, dim=2) / temperature)
-        loss = -torch.log(pos_sim / denom.squeeze()).mean()
-        return loss
 
     def vec_map_loss(self, ui, za, tau):
         # ui: (B, D, HW), za: (B, D)
@@ -221,6 +210,17 @@ class CL_PRETRAIN(FinetuningModel):
 
         return loss / (2 * N)
 
+    def map_map_loss(self, local_features_q, local_features_k, temperature):
+        B, N, D = local_features_q.shape
+        local_features_q = F.normalize(local_features_q, dim=2)  # 归一化
+        local_features_k = F.normalize(local_features_k, dim=2)
+        sim_matrix = torch.bmm(local_features_q, local_features_k.transpose(1, 2)) / temperature
+        sim_matrix = torch.exp(sim_matrix)  # 指数化
+        mask = ~torch.eye(N, dtype=bool, device=local_features_q.device)  # 排除自身比较
+        denom = sim_matrix.masked_fill(~mask, 0).sum(dim=2, keepdim=True)
+        pos_sim = torch.exp(torch.sum(local_features_q * local_features_k, dim=2) / temperature)
+        loss = -torch.log(pos_sim / denom.squeeze()).mean()
+        return loss
     def contrastive_loss(self, features, temperature):
         """
         计算全局自监督对比损失

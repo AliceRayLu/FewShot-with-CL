@@ -44,6 +44,11 @@ class GlobalSSContrastiveLoss(torch.nn.Module):
         # 计算负样本对的logits
         exp_scores_neg = torch.sum(torch.exp(scores), dim=-1, keepdim=True) - exp_scores_pos
 
+        # 添加indicator function
+        # 使用掩码矩阵排除对角线元素
+        mask = torch.eye(len(scores), dtype=torch.bool)
+        exp_scores_neg = exp_scores_neg.masked_fill(mask, 0)
+
         # 计算对比损失
         loss = -torch.log(exp_scores_pos / (exp_scores_pos + exp_scores_neg))
 

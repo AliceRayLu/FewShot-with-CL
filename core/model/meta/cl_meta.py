@@ -2,7 +2,7 @@ import torch
 from torch import nn
 from torch.optim import SGD
 from torch.optim.lr_scheduler import StepLR
-from core.model import convert_maml_module, MetaModel
+from core.model import MetaModel
 from core.utils import accuracy
 
 import math
@@ -32,19 +32,15 @@ class Attn(nn.Module): # Multi-head attention with heads fixed to 1
 
 
 class CL_META(MetaModel):
-    # TODO : loss_func  emb_func(include GAP)
-    def __init__(self, feat_dim, class_num, way_num, loss_func, inner_param, **kwargs):
+    # TODO : emb_func(include GAP)
+    def __init__(self, feat_dim, class_num, way_num, **kwargs):
         super(CL_META, self).__init__(**kwargs)
         self.feat_dim = feat_dim
-        self.inner_param = inner_param
-        self.loss_func = loss_func
         self.projection = MLP(feat_dim, class_num)
         self.way_num = way_num
         self.attention = Attn(feat_dim*class_num)  # TODO: embed_dim
         self.optimizer = SGD(params=[...], lr=0.01, momentum=0.9, weight_decay=5e-4)
         self.scheduler = StepLR(self.optimizer, step_size=40, gamma=0.5)
-
-        convert_maml_module(self)
 
     def forward_output(self, x):
         feat_wo_head = self.emb_func(x)

@@ -1,0 +1,87 @@
+# data 相关配置
+data_root: /data/miniImageNet--ravi
+augment: True
+augment_times: 2
+augment_times_query: 2
+augment_method: SimCLR_Style
+augment_size: 64
+use_memory: False
+workers: 16
+dataloader_num: 1
+image_size: 84 
+
+# backbone
+backbone:
+  kwargs:
+    kwargs:
+    avg_pool: True
+    is_flatten: False
+    keep_prob: 0.0
+    maxpool_last2: False
+  name: resnet12
+
+# classifier
+classifier:
+  kwargs:
+    feat_dim:
+    num_class:
+    inner_param:  
+  name: CL_PRETRAIN
+
+# device 
+deterministic: True
+seed: 2147483647
+device_ids: 0
+n_gpu: 1
+port: 34830
+
+# misc
+log_interval: 100
+log_level: info
+log_name: null
+log_paramerter: False
+result_root: ./results
+resume_path: ./results/CL-miniImageNet--ravi-resnet12-5-1
+save_interval: 10
+save_part:
+  - emb_func
+tag: null
+
+# model
+epoch: 100
+# test_epoch: 5
+# parallel_part:
+#   - emb_func
+# pretrain_path:   #TODO
+# resume: True
+# way_num: 5
+# shot_num: 1
+# query_num: 15
+# test_query: 15
+# test_shot: 1
+# test_way: 5
+# episode_size: 1 # TODO: 
+# test_episode: 2000
+# train_episode: 4000
+batch_size: 128
+
+# optimizer
+lr_scheduler:
+  kwargs:
+    gamma: 0.5
+    step_size: 40
+  name: StepLR
+
+optimizer: # TODO:
+  kwargs:
+    betas:
+    - 0.5
+    - 0.9
+    lr: 0.001
+  name: Adam
+  other: null 
+warmup: 0 # TODO:
+
+rank: 0
+
+tb_scale: 6.666666666666667

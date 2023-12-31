@@ -37,11 +37,9 @@ class CL_META(MetaModel):
     def __init__(self, feat_dim, class_num, way_num, **kwargs):
         super(CL_META, self).__init__(**kwargs)
         self.feat_dim = feat_dim
-        self.projection = MLP(feat_dim, class_num)
+        self.projection = MLP(feat_dim, class_num) # TODO: output dimention
         self.way_num = way_num
         self.attention = Attn(feat_dim * class_num)  # TODO: embed_dim
-        self.optimizer = SGD(params=[...], lr=0.01, momentum=0.9, weight_decay=5e-4)
-        self.scheduler = StepLR(self.optimizer, step_size=40, gamma=0.5)
 
     def forward_output(self, x):
         feat_wo_head = self.emb_func(x)

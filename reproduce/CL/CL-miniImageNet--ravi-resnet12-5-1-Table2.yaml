@@ -8,7 +8,7 @@ augment_size: 64
 use_memory: False
 workers: 16
 dataloader_num: 1
-image_size: 64 # TODO:
+image_size: 84 
 
 # backbone
 backbone:
@@ -24,10 +24,8 @@ backbone:
 classifier:
   kwargs:
     feat_dim: 640
-    way_num:
-    inner_param:
-      extractor_lr:
-      classifier_lr:
+    class_num:
+    way_num:    
   name: CL_META
 
 # device 
@@ -54,7 +52,7 @@ epoch: 100
 test_epoch: 5
 parallel_part:
   - emb_func
-pretrain_path: 
+pretrain_path:   #TODO
 resume: True
 way_num: 5
 shot_num: 1

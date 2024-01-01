@@ -88,6 +88,10 @@ class CL_PRETRAIN(FinetuningModel):
         self.loss_func = nn.CrossEntropyLoss()
 
         self.projection = MLP(feat_dim, num_class)
+    
+    def forward_output(self, x):
+        feat_wo_head = self.emb_func(x)
+        return feat_wo_head
 
     def set_forward(self, batch):
         image, global_target = batch

@@ -163,17 +163,14 @@ class CL_PRETRAIN(FinetuningModel):
         output = classifier(global_feat)
         L_CE = self.loss_func(output, target)
 
-
         input_dim = 256  # 输入特征的维度
         output_dim = 128  # 投影头输出的维度
 
         #新的计算全局自监督对比损失
 
-        N = global_feat.shape[0] // 2
         # 使用 MLP 投影头得到 z_i 和 z_i_prime
-        projection_head = SpatialProjectionHead(input_dim, output_dim)
-        z_i, _, _ = projection_head(global_feat[:N])
-        z_i_prime, _, _ = projection_head(global_feat[N:])
+        z_i = self.projection.forward(global_feat)
+        z_i_prime = self.projection.forward(global_feat)
 
         ss_contrastive_loss = GlobalSSContrastiveLoss(temperature=tau1)
         l_ss_global = ss_contrastive_loss(z_i, z_i_prime)

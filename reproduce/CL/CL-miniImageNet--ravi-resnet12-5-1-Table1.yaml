@@ -23,10 +23,10 @@ backbone:
 # classifier
 classifier:
   kwargs:
-    feat_dim: 640
-    class_num:
-    way_num:    
-  name: CL_META
+    feat_dim:
+    num_class:
+    inner_param:  
+  name: CL_PRETRAIN
 
 # device 
 deterministic: True
@@ -49,20 +49,20 @@ tag: null
 
 # model
 epoch: 100
-test_epoch: 5
-parallel_part:
-  - emb_func
-pretrain_path:   #TODO
-resume: True
-way_num: 5
-shot_num: 1
-query_num: 15
-test_query: 15
-test_shot: 1
-test_way: 5
-episode_size: 1 # TODO: 
-test_episode: 2000
-train_episode: 4000
+# test_epoch: 5
+# parallel_part:
+#   - emb_func
+# pretrain_path:   #TODO
+# resume: True
+# way_num: 5
+# shot_num: 1
+# query_num: 15
+# test_query: 15
+# test_shot: 1
+# test_way: 5
+# episode_size: 1 # TODO: 
+# test_episode: 2000
+# train_episode: 4000
 batch_size: 128
 
 # optimizer

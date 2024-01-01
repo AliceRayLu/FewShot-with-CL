@@ -37,11 +37,9 @@ class CL_META(MetaModel):
     def __init__(self, feat_dim, class_num, way_num, **kwargs):
         super(CL_META, self).__init__(**kwargs)
         self.feat_dim = feat_dim
-        self.projection = MLP(feat_dim, class_num)
+        self.projection = MLP(feat_dim, class_num) # TODO: output dimention
         self.way_num = way_num
         self.attention = Attn(feat_dim * class_num)  # TODO: embed_dim
-        # self.optimizer = SGD(params=[...], lr=0.01, momentum=0.9, weight_decay=5e-4)
-        # self.scheduler = StepLR(self.optimizer, step_size=40, gamma=0.5)
 
     def forward_output(self, x):
         feat_wo_head = self.emb_func(x)
@@ -57,12 +55,21 @@ class CL_META(MetaModel):
             support_target,
             query_target,
         ) = self.split_by_episode(image, mode=2)
-        episode_size, _, c, h, w = support_image.size()
+        support_size, _, c, h, w = support_image.size()
+        query_size,_,c,h,w = query_image.size()
 
+        support_output = self.emb_func(support_image)
+        prototype = self.crk(support_output,support_target)
         output_list = []
-        for i in range(episode_size):
+        for i in range(query_size): # 对每一条query，找到最类似的某一类的prototype，然后预测
             episode_query_image = query_image[i].contiguous().reshape(-1, c, h, w)
-            output = self.forward_output(episode_query_image)
+            vec = self.emb_func(episode_query_image)
+            maxp = 0
+            for j in range(support_size):
+                curp = self.P(vec,support_target[j],prototype)
+                if curp > maxp:
+                    maxp = curp
+                    output = support_target[j]
             output_list.append(output)
 
         output = torch.cat(output_list, dim=0)
@@ -148,20 +155,22 @@ class CL_META(MetaModel):
                              features_support2, features_query2, support_y2, query_y2, tau5)
 
         loss = L_meta + beta * L_info
-        grad = torch.autograd.grad(
-            loss, fast_parameters, create_graph=True, allow_unused=True
-        )
-        fast_parameters = []
+        # grad = torch.autograd.grad(
+        #     loss, fast_parameters, create_graph=True, allow_unused=True
+        # )
+        # fast_parameters = []
 
-        for k, weight in enumerate(self.named_parameters()):
-            if grad[k] is None:
-                continue
-            lr = classifier_lr if "Linear" in weight[0] else extractor_lr
-            if weight[1].fast is None:
-                weight[1].fast = weight[1] - lr * grad[k]
-            else:
-                weight[1].fast = weight[1].fast - lr * grad[k]
-            fast_parameters.append(weight[1].fast)
+        loss.backward()
+
+        # for k, weight in enumerate(self.named_parameters()):
+        #     if grad[k] is None:
+        #         continue
+        #     lr = classifier_lr if "Linear" in weight[0] else extractor_lr
+        #     if weight[1].fast is None:
+        #         weight[1].fast = weight[1] - lr * grad[k]
+        #     else:
+        #         weight[1].fast = weight[1].fast - lr * grad[k]
+        #     fast_parameters.append(weight[1].fast)
 
         return loss
 

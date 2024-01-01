@@ -43,8 +43,7 @@ class CL_META(MetaModel):
 
     def forward_output(self, x):
         feat_wo_head = self.emb_func(x)
-        feat_w_head = self.projection.forward(x)
-        return feat_wo_head, feat_w_head
+        return feat_wo_head
 
     def set_forward(self, batch):
         image, global_target = batch
@@ -100,7 +99,6 @@ class CL_META(MetaModel):
 
         output_list = []
         loss = []
-        acc = []
 
         for i in range(episode_size):
             episode_support_X1 = support_X1[i].contiguous().reshape(-1, c, h, w)
@@ -118,19 +116,13 @@ class CL_META(MetaModel):
                                                    episode_support_y2, episode_query_y2)
             loss.append(cur_loss)
 
-            features1, output1 = self.forward_output(episode_query_X1)
-            features2, output2 = self.forward_output(episode_query_X2)
-            acc.append(accuracy(output1, episode_query_y1))
-            acc.append(accuracy(output2, episode_query_y2))
-
             output_list.append(torch.cat((output1, output2)), dim=0)
 
         output = torch.cat(output_list, dim=0)
 
-        acc = sum(acc) / len(acc)
         loss = sum(loss) / len(loss)
 
-        return output, acc, loss
+        return output, 1, loss
 
     def set_forward_adaptation(self, support_X1, query_X1, support_y1, query_y1,
                                support_X2, query_X2, support_y2, query_y2):
@@ -141,10 +133,10 @@ class CL_META(MetaModel):
         self.emb_func.train()
         # self.classifier.train()
 
-        features_support1, _ = self.forward_output(support_X1)
-        features_support2, _ = self.forward_output(support_X2)
-        features_query1, _ = self.forward_output(query_X1)
-        features_query2, _ = self.forward_output(query_X2)
+        features_support1 = self.forward_output(support_X1)
+        features_support2 = self.forward_output(support_X2)
+        features_query1 = self.forward_output(query_X1)
+        features_query2 = self.forward_output(query_X2)
 
         tau5 = 0.1
         beta = 0.01

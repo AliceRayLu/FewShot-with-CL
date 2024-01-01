@@ -37,9 +37,9 @@ class CL_META(MetaModel):
     def __init__(self, feat_dim, class_num, way_num, **kwargs):
         super(CL_META, self).__init__(**kwargs)
         self.feat_dim = feat_dim
-        self.projection = MLP(feat_dim, class_num) # TODO: output dimention
+        self.projection = MLP(feat_dim, 256 ) # TODO: output dimention
         self.way_num = way_num
-        self.attention = Attn(feat_dim * class_num)  # TODO: embed_dim
+        self.attention = Attn(feat_dim) 
 
     def forward_output(self, x):
         feat_wo_head = self.emb_func(x)

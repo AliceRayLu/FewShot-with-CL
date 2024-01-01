@@ -24,8 +24,8 @@ backbone:
 classifier:
   kwargs:
     feat_dim: 640
-    class_num:
-    way_num:    
+    class_num: 100
+    way_num:  5
   name: CL_META
 
 # device 
@@ -76,6 +76,7 @@ optimizer: # TODO:
   kwargs:
     weight_decay: 5e-4
     lr: 0.1
+    momentum: 0.9
   name: SGD
   other: null 
 warmup: 0 # TODO:

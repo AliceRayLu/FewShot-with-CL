@@ -23,9 +23,18 @@ backbone:
 # classifier
 classifier:
   kwargs:
-    feat_dim:
-    num_class:
-    inner_param:  
+    feat_dim: 640
+    num_class: 100
+    inner_param:
+      inner_batch_size: 4
+      inner_optim:
+        kwargs:
+          dampening: 0.9
+          lr: 0.1
+          momentum: 0.9
+          weight_decay: 5e-4
+        name: SGD
+      inner_train_iter: 300
   name: CL_PRETRAIN
 
 # device 
@@ -74,9 +83,11 @@ lr_scheduler:
 
 optimizer: # TODO:
   kwargs:
-    weight_decay: 5e-4
-    lr: 0.1
-  name: SGD
+    betas:
+    - 0.5
+    - 0.9
+    lr: 0.001
+  name: Adam
   other: null 
 warmup: 0 # TODO:
 

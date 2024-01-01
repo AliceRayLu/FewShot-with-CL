@@ -167,30 +167,24 @@ class CL_META(MetaModel):
     def crk(self, X, y):
         # 输入一个经过GAP的 **support set**
 
-        # 创建一个字典用于存储每个类别的值和计数
         class_values = {}
         class_counts = {}
 
-        # 遍历s_image1中的元素
         for i in range(len(X)):
             target = y[i].item()  # 将PyTorch张量转换为标量
             value = X[i]
 
-            # 如果目标类别不在字典中，添加新的键值对
             if target not in class_values:
                 class_values[target] = value
                 class_counts[target] = 1
             else:
-                # 如果目标类别已经在字典中，累加值和计数
                 class_values[target] += value
                 class_counts[target] += 1
 
-        # 计算每个类别的均值
         class_means = {}
         for target in class_values:
             class_means[target] = class_values[target] / class_counts[target]
 
-        # 将结果存储在长度为类别数量的数组中
         result_array = [class_means.get(target, 0) for target in range(max(y) + 1)]
 
         return torch.tensor(result_array)

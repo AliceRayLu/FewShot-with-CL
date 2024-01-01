@@ -110,7 +110,7 @@ class CL_META(MetaModel):
             episode_query_y1 = query_y1[i].reshape(-1)
             episode_query_y2 = query_y2[i].reshape(-1)
 
-            cur_loss = self.set_forward_adaptation(episode_support_X1, episode_query_X1,
+            cur_loss, output1, output2 = self.set_forward_adaptation(episode_support_X1, episode_query_X1,
                                                    episode_support_y1, episode_query_y1,
                                                    episode_support_X2, episode_query_X2,
                                                    episode_support_y2, episode_query_y2)
@@ -162,7 +162,7 @@ class CL_META(MetaModel):
                 weight[1].fast = weight[1].fast - lr * grad[k]
             fast_parameters.append(weight[1].fast)
 
-        return loss
+        return loss, features_support1, features_support2
 
     def crk(self, X, y):
         # 输入一个经过GAP的 **support set**

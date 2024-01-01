@@ -131,13 +131,13 @@ class CL_PRETRAIN(FinetuningModel):
         target = target.to(self.device)
 
         images, _ = batch
-        image1 = images[0]
+        image1 = images[0:128]
         image1 = image1.to(self.device)
         (
             X1, _, _, _
         ) = self.split_by_episode(image1, mode=2)
 
-        image2 = images[1]
+        image2 = images[128:]
         image2 = image2.to(self.device)
         (
             X2, _, _, _

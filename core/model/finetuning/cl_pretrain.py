@@ -107,7 +107,7 @@ class CL_PRETRAIN(FinetuningModel):
         output_list = []
         for i in range(episode_size):
             episode_query_image = query_image[i].contiguous().reshape(-1, c, h, w)
-            _, output = self.forward_output(episode_query_image)
+            output = self.forward_output(episode_query_image)
             output_list.append(output)
 
         output = torch.cat(output_list, dim=0)
@@ -120,7 +120,7 @@ class CL_PRETRAIN(FinetuningModel):
         output_list = []
         for i in range(episode_size):
             episode_image = X[i].contiguous().reshape(-1, c, h, w)
-            _, output = self.forward_output(episode_image)
+            output = self.forward_output(episode_image)
             output_list.append(output)
 
         output = torch.cat(output_list, dim=0)

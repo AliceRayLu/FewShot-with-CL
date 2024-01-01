@@ -74,11 +74,9 @@ lr_scheduler:
 
 optimizer: # TODO:
   kwargs:
-    betas:
-    - 0.5
-    - 0.9
-    lr: 0.001
-  name: Adam
+    weight_decay: 5e-4
+    lr: 0.1
+  name: SGD
   other: null 
 warmup: 0 # TODO:
 

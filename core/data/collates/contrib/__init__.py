@@ -45,11 +45,11 @@ def get_augment_method(
                 cifar10: 32
                 stl10: 96
             """
-            base_transform = SimCLR_Style(config["augment_size"]).base_transform
+            base_transform = SimCLR_Style(config["image_size"]).base_transform
             trfms_list += [ContrastiveLearningViewGenerator(base_transform)]
         elif config["augment_method"] == "Standard":
             trfms_list = get_default_image_size_trfms(config["image_size"])
-            base_transform = Standard(config["augment_size"]).base_transform
+            base_transform = Standard(config["image_size"]).base_transform
             trfms_list += [ContrastiveLearningViewGenerator(base_transform)]
         elif config["augment_method"] == "AutoAugment":
             trfms_list = get_default_image_size_trfms(config["image_size"])

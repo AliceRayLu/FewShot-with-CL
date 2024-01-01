@@ -37,42 +37,29 @@ class GeneralCollateFunction(object):
         try:
             images, targets = zip(*batch)
 
-            aug_images = [[] for _ in range(self.times)]
-
-            for image in images:
-                imgs = self.trfms[image]
-                for time in range(self.times):
-                    aug_images[time].append(imgs[time].unsqueeze(0))
-
-            # images = list(
-            #     itertools.chain.from_iterable(
-            #         [[image] * self.times for image in images]
-            #     )
-            # )
-
-            # for image in images:
-            #     imgs = self.trfms[image]
-            #     for img in imgs:
-            #         images.extend(img.unsqueeze(0))
-
-            # images = [self.trfms(image).unsqueeze(0) for image in images]
+            images = list(
+                itertools.chain.from_iterable(
+                    [[image] * self.times for image in images]
+                )
+            )
+            images = [self.trfms(image).unsqueeze(0) for image in images]
 
             targets = list(
                 itertools.chain.from_iterable(
-                    [[target] for target in targets]
+                    [[target] * self.times for target in targets]
                 )
             )
             targets = [torch.tensor([target]) for target in targets]
 
-            assert len(aug_images[0]) == len(
+            assert len(images) == len(
                 targets
             ), "Inconsistent number of images and labels!"
 
-            aug_images = torch.cat(aug_images)
+            images = torch.cat(images)
 
             targets = torch.tensor(targets, dtype=torch.int64)
 
-            return aug_images, targets
+            return images, targets
         except TypeError:
             raise TypeError(
                 "Error, probably because the transforms are passed to the dataset, the transforms should be "
@@ -157,19 +144,13 @@ class FewShotAugCollateFunction(object):
             )
             images = flat(images_split_by_label_type)  # 1111111111122222222222
             # images = [self.trfms(image) for image in images]  # list of tensors([c, h, w])
-
-            aug_images = [[] for _ in range(self.times)]
-            # images = []
-            for index, image in enumerate(images):
-                if index % (self.shot_aug + self.query_aug) < self.shot_aug:
-                    imgs = self.trfms_support(image)
-                    for time in range(self.times):
-                        aug_images[time].append(imgs[time])
-                else:
-                    imgs = self.trfms_query(image)
-                    for time in range(self.times):
-                        aug_images[time].append(imgs[time])
-            images = torch.stack(aug_images)  # [b', c, h, w] <- b' = b after aug
+            images = [
+                self.trfms_support(image)
+                if index % (self.shot_aug + self.query_aug) < self.shot_aug
+                else self.trfms_query(image)
+                for index, image in enumerate(images)
+            ]  # list of tensors([c, h, w])
+            images = torch.stack(images)  # [b', c, h, w] <- b' = b after aug
 
             # labels
             # global_labels = torch.tensor(labels,dtype=torch.int64)

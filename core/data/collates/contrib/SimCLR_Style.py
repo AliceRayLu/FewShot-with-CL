@@ -85,7 +85,7 @@ class ContrastiveLearningViewGenerator(object):
         self.n_views = n_views
 
     def __call__(self, x):
-        return [self.base_transform(x) for i in range(self.n_views)]
+        return self.base_transform(x)
 
 
 class BaseSimCLRException(Exception):

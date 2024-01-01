@@ -2,7 +2,7 @@ import torch
 from torch import nn
 from torch.optim import SGD
 from torch.optim.lr_scheduler import StepLR
-from core.model import MetaModel
+from .meta_model import MetaModel
 from core.utils import accuracy
 
 import math

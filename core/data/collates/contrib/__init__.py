@@ -130,6 +130,9 @@ def get_default_image_size_trfms(image_size):
             transforms.CenterCrop((80, 80)),
             transforms.RandomHorizontalFlip(),
         ]
+    # CL's unique config
+    elif image_size == 64:
+        trfms = []
     else:
         raise RuntimeError
     return trfms

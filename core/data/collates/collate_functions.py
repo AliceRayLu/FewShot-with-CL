@@ -64,9 +64,9 @@ class GeneralCollateFunction(object):
             )
             targets = [torch.tensor([target]) for target in targets]
 
-            assert len(aug_images) == len(
+            assert len(aug_images[0]) == len(
                 targets
-            ) * self.times, "Inconsistent number of images and labels!"
+            ), "Inconsistent number of images and labels!"
 
             aug_images = torch.cat(aug_images)
 

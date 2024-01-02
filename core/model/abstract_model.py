@@ -89,6 +89,10 @@ class AbstractModel(nn.Module):
             )
         elif mode == 2:  # input 4D, return 5D(with episode) E.g.DN4
             b, c, h, w = features.shape # b（batch size）、c（通道数）、h（高度）、w（宽度）
+            print(b)
+            print(self.way_num)
+            print(self.shot_num)
+            print(self.query_num)
             features = features.contiguous().view(
                 episode_size,
                 self.way_num,
@@ -114,6 +118,7 @@ class AbstractModel(nn.Module):
                 episode_size, self.way_num * self.query_num
             )
         elif mode == 3:  # input 4D, return 4D(w/o episode) E.g.realationnet
+            print(features.shape)
             b, c, h, w = features.shape
             features = features.contiguous().view(
                 self.way_num, self.shot_num + self.query_num, c, h, w

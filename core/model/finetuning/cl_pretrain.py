@@ -21,7 +21,7 @@ class SpatialProjectionHead(torch.nn.Module):
 
     def forward(self, x):
         # x: (B, C, H, W)
-        B, C, H, W = x.size()
+        B, C = x.size()
         x = x.view(B, C, -1).permute(0, 2, 1)  # Reshape and permute dimensions
         q = self.fq(x)
         k = self.fk(x)
@@ -30,9 +30,10 @@ class SpatialProjectionHead(torch.nn.Module):
 
 class GlobalSSContrastiveLoss(torch.nn.Module):
     #全局自监督对比损失
-    def __init__(self, temperature):
+    def __init__(self, temperature,device):
         super(GlobalSSContrastiveLoss, self).__init__()
         self.temperature = temperature
+        self.device = device
 
     def forward(self, z_i, z_i_prime):
         # 计算相似度分数
@@ -47,6 +48,7 @@ class GlobalSSContrastiveLoss(torch.nn.Module):
         # 添加indicator function
         # 使用掩码矩阵排除对角线元素
         mask = torch.eye(len(scores), dtype=torch.bool)
+        mask = mask.to(self.device)
         exp_scores_neg = exp_scores_neg.masked_fill(mask, 0)
 
         # 计算对比损失
@@ -115,42 +117,47 @@ class CL_PRETRAIN(FinetuningModel):
         return output, acc
 
 
-    def my_forward(self, X):
-        episode_size, _, c, h, w = X.size()
-        output_list = []
-        for i in range(episode_size):
-            episode_image = X[i].contiguous().reshape(-1, c, h, w)
-            output = self.forward_output(episode_image)
-            output_list.append(output)
+    # def my_forward(self, X):
+    #     episode_size, _, c, h, w = X.size()
+    #     output_list = []
+    #     for i in range(episode_size):
+    #         episode_image = X[i].contiguous().reshape(-1, c, h, w)
+    #         output = self.forward_output(episode_image)
+    #         output_list.append(output)
 
-        output = torch.cat(output_list, dim=0)
-        return output
+    #     output = torch.cat(output_list, dim=0)
+    #     return output
 
     def set_forward_loss(self, batch):
-        _, target = batch
+        images, target = batch
         target = target.to(self.device)
+        images = images.to(self.device)
 
-        images, _ = batch
-        image1 = images[0:128]
-        image1 = image1.to(self.device)
-        (
-            X1, _, _, _
-        ) = self.split_by_episode(image1, mode=2)
+        # images, _ = batch
+        # image1 = images[0:128]
+        # image1 = image1.to(self.device)
+        # (
+        #     X1, _, _, _
+        # ) = self.split_by_episode(image1, mode=2)
 
-        image2 = images[128:]
-        image2 = image2.to(self.device)
-        (
-            X2, _, _, _
-        ) = self.split_by_episode(image2, mode=2)
+        # image2 = images[128:]
+        # image2 = image2.to(self.device)
+        # (
+        #     X2, _, _, _
+        # ) = self.split_by_episode(image2, mode=2)
 
-        X1 = self.my_forward(X1)
-        X2 = self.my_forward(X2)
+        # X1 = self.my_forward(X1)
+        # X2 = self.my_forward(X2)
 
-        X = torch.cat([X1, X2], dim=0)
-
+        # images = images.to(self.device)
+        # (
+        #     X,_,support_target,query_target
+        # ) = self.split_by_episode(images, mode=3)
+        # print(X.shape)
         feat_extractor = self.emb_func
         # 获取全局特征
-        global_feat = feat_extractor(X)
+        global_feat = feat_extractor(images)
+        print(global_feat.shape)
 
         # 定义温度参数
         tau1 = 0.1
@@ -176,7 +183,7 @@ class CL_PRETRAIN(FinetuningModel):
         z_i = self.projection.forward(global_feat)
         z_i_prime = self.projection.forward(global_feat)
 
-        ss_contrastive_loss = GlobalSSContrastiveLoss(temperature=tau1)
+        ss_contrastive_loss = GlobalSSContrastiveLoss(temperature=tau1,device=self.device)
         l_ss_global = ss_contrastive_loss(z_i, z_i_prime)
 
  # 旧的      l_ss_global = self.contrastive_loss(global_feat, tau1)

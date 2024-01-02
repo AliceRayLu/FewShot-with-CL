@@ -4,7 +4,6 @@ augment: True
 augment_times: 2
 augment_times_query: 2
 augment_method: SimCLR_Style
-augment_size: 64
 use_memory: False
 workers: 1
 dataloader_num: 1
@@ -14,9 +13,9 @@ image_size: 84
 backbone:
   kwargs:
     avg_pool: True
-    is_flatten: False
+    is_flatten: True
     keep_prob: 0.0
-    maxpool_last2: False
+    maxpool_last2: True
   name: resnet12
 
 # classifier
@@ -64,13 +63,13 @@ pretrain_path:   #TODO
 resume: True
 way_num: 32
 shot_num: 1
-query_num: 2
+query_num: 15
 test_query: 15
 test_shot: 1
 test_way: 5
 episode_size: 1 # TODO: 
-test_episode: 2000
-train_episode: 4000
+test_episode: 600
+train_episode: 1000
 batch_size: 128
 
 # optimizer

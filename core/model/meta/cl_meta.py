@@ -28,7 +28,8 @@ class Attn(nn.Module):  # Multi-head attention with heads fixed to 1
         self.attn = nn.MultiheadAttention(embed_dim, 1)
 
     def forward(self, support_img, query_img, support_target):
-        output, weights = self.attn(query_img, support_target, support_img)
+        print(nn.functional.one_hot(support_target))
+        output, weights = self.attn(query_img,nn.functional.one_hot(support_target), support_img)
         return output
 
 
@@ -77,7 +78,9 @@ class CL_META(MetaModel):
 
     def set_forward_loss(self, batch):
         images, _ = batch
-        image1 = images[0:128]
+        print(images.shape)
+        image1 = images[0:images.shape[0]//2]
+        print(image1.shape)
         image1 = image1.to(self.device)
         (
             support_X1,
@@ -86,7 +89,7 @@ class CL_META(MetaModel):
             query_y1,
         ) = self.split_by_episode(image1, mode=2)
 
-        image2 = images[128:]
+        image2 = images[images.shape[0]//2:]
         image2 = image2.to(self.device)
         (
             support_X2,
@@ -95,7 +98,7 @@ class CL_META(MetaModel):
             query_y2,
         ) = self.split_by_episode(image2, mode=2)
 
-        episode_size, _, c, h, w = support_X1.size()
+        episode_size,_, c, h, w = support_X1.size()
 
         output_list = []
         loss = []
@@ -187,7 +190,9 @@ class CL_META(MetaModel):
 
         result_array = [class_means.get(target, 0) for target in range(max(y) + 1)]
 
-        return torch.tensor(result_array)
+        res = torch.tensor([item.cpu().detach().numpy() for item in result_array]).cuda()
+
+        return res
 
     def P(self, X, y, c):
         # 输入单条样本，计算一个label为y的概率
